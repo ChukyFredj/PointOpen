@@ -6,25 +6,20 @@ on:
       - main
 
 jobs:
-  build:
-    name: Build
+  build-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-          run_install: false
+      - uses: actions/checkout@v3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
-          node-version: 20
+          node-version: '20'
           cache: 'pnpm'
+
+      - name: Install PNPM
+        run: npm install -g pnpm
 
       - name: Install dependencies
         run: pnpm install
@@ -32,32 +27,10 @@ jobs:
       - name: Build project
         run: pnpm run build
 
-      - name: List dist folder
-        run: ls -al ./dist
-
-      - name: Upload production-ready build files
-        uses: actions/upload-artifact@v3
-        with:
-          name: production-files
-          path: ./dist
-
-  deploy:
-    name: Deploy
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: production-files
-
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
+          publish_dir: ./build
+          destination_dir: .
+          force_orphan: true
