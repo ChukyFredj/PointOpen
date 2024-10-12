@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
@@ -16,8 +19,9 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '20'
+          cache: 'pnpm'
 
-      - name: Install PNPM
+      - name: Setup PNPM
         run: npm install -g pnpm
 
       - name: Install dependencies
@@ -26,10 +30,12 @@ jobs:
       - name: Build project
         run: pnpm run build
 
+      - name: List build directory
+        run: ls -al ./dist  
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build
+          publish_dir: ./dist
           destination_dir: .
-          force_orphan: true
