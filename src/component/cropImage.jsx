@@ -1,4 +1,3 @@
-// cropImage.js
 export default function getCroppedImg(imageSrc, pixelCrop) {
     return new Promise((resolve, reject) => {
         const image = new Image();
@@ -28,8 +27,7 @@ export default function getCroppedImg(imageSrc, pixelCrop) {
                     return;
                 }
                 blob.name = 'cropped.jpeg';
-                const croppedImageUrl = URL.createObjectURL(blob);
-                resolve(croppedImageUrl);
+                resolve(blob);
             }, 'image/jpeg');
         };
         image.onerror = (error) => {

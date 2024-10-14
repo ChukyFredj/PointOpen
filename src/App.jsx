@@ -9,19 +9,18 @@ import ActionTable from './component/ActionTable';
 import ActionModal from './component/ActionModal';
 import HelpAccordions from './component/HelpAccordions';
 import Header from './component/Header';
+import { set, get, del } from 'idb-keyval';
+import Modal from 'react-modal';
+Modal.setAppElement('#root');
 
 function DossierForm() {
-  // États existants
   const [nom, setNom] = useState(() => localStorage.getItem('nom') || '');
   const [prenom, setPrenom] = useState(() => localStorage.getItem('prenom') || '');
   const [annee, setAnnee] = useState(() => localStorage.getItem('annee') || '1');
   const [ecole, setEcole] = useState(() => localStorage.getItem('ecole') || 'ESGI');
   const [classe, setClasse] = useState('');
   const [logoEcole, setLogoEcole] = useState('/logos/esgi.svg');
-  const [actions, setActions] = useState(() => {
-    const savedActions = localStorage.getItem('actions');
-    return savedActions ? JSON.parse(savedActions) : [];
-  });
+  const [actions, setActions] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newAction, setNewAction] = useState({
     axe: '',
@@ -30,7 +29,6 @@ function DossierForm() {
     justificatifPreview: '',
   });
 
-  // États pour le rognage d'image
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -39,69 +37,69 @@ function DossierForm() {
 
   const contentRef = useRef(null);
 
-  // État pour les accordéons
   const [openAccordion, setOpenAccordion] = useState(null);
 
-  // State for total points per axe
   const [totalPointsPerAxe, setTotalPointsPerAxe] = useState({});
 
-  // Limites par axe
   const axeLimits = {
-    'Entreprise': 8,
+    Entreprise: 8,
     'Challenge / Communication': 8,
     "Esprit d'équipe": 6,
-    'Ouverture sur l’extérieur': 5
+    'Ouverture sur l’extérieur': 5,
+  };
+
+
+  const blobToBase64 = (blob) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        resolve(reader.result);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   };
 
   useEffect(() => {
-    setClasse(`${annee}ème année ${ecole}`);
-    switch (ecole) {
-      case 'ESGI':
-        setLogoEcole('/logos/esgi.svg');
-        break;
-      case 'EFAB':
-        setLogoEcole('/logos/efab.svg');
-        break;
-      case 'Efet Studio Créa':
-        setLogoEcole('/logos/efet.svg');
-        break;
-      case 'EIML':
-        setLogoEcole('/logos/eiml.svg');
-        break;
-      case 'ESUPCOM':
-        setLogoEcole('/logos/esupcom.svg');
-        break;
-      case 'Maestris BTS':
-        setLogoEcole('/logos/maestris.svg');
-        break;
-      case 'PPA':
-        setLogoEcole('/logos/ppa.svg');
-        break;
-      case 'PPA-SPORT':
-        setLogoEcole('/logos/ppa-sport.svg');
-        break;
-      case 'ISA':
-        setLogoEcole('/logos/isa.svg');
-        break;
-      case 'ISFJ':
-        setLogoEcole('/logos/isfj.svg');
-        break;
-      case 'MODART':
-        setLogoEcole('/logos/modart.svg');
-        break;
-      case 'ENGDE':
-        setLogoEcole('/logos/engde.svg');
-        break;
-      default:
-        setLogoEcole('');
-        break;
-    }
-    // Ajoutez d'autres écoles si nécessaire
-  }, [annee, ecole]);
+    const loadActions = async () => {
+      const savedActions = localStorage.getItem('actions');
+      if (savedActions) {
+        const parsedActions = JSON.parse(savedActions);
 
-  // Enregistrer les données dans le local storage lorsqu'elles changent
+        const actionsWithImages = await Promise.all(
+          parsedActions.map(async (action) => {
+            const imageBase64 = await get(`image-${action.id}`);
+            return {
+              ...action,
+              justificatifPreview: imageBase64 || '',
+            };
+          })
+        );
+
+        setActions(actionsWithImages);
+      }
+    };
+
+    loadActions();
+  }, []);
+
   useEffect(() => {
-    localStorage.setItem('actions', JSON.stringify(actions));
+    const logos = import.meta.glob('./assets/logos/*', { eager: true });
+    const logoPath = `./assets/logos/${ecole.toLowerCase()}.svg`;
+
+    if (logos[logoPath]) {
+      setLogoEcole(logos[logoPath].default);
+    } else {
+      setLogoEcole('');
+      console.error("Logo introuvable pour l'école :", ecole);
+    }
+
+    setClasse(`${annee}ème année ${ecole}`);
+  }, [ecole, annee]);
+
+  useEffect(() => {
+    const actionsWithoutImages = actions.map(({ justificatif, justificatifPreview, ...rest }) => rest);
+    localStorage.setItem('actions', JSON.stringify(actionsWithoutImages));
   }, [actions]);
 
   useEffect(() => {
@@ -120,13 +118,24 @@ function DossierForm() {
     localStorage.setItem('ecole', ecole);
   }, [ecole]);
 
-  // Gestion de l'ajout des actions
-  const handleAddAction = () => {
+  const handleAddAction = async () => {
     if (!newAction.axe || !newAction.description || !newAction.justificatif) {
       alert('Les champs "Description", "Axe" et "Justificatif" sont obligatoires.');
       return;
     }
-    setActions([...actions, newAction]);
+
+    const actionId = Date.now();
+
+    await set(`image-${actionId}`, newAction.justificatif);
+
+    const actionWithoutImage = {
+      ...newAction,
+      id: actionId,
+      justificatif: null,
+      justificatifPreview: newAction.justificatifPreview,
+    };
+
+    setActions([...actions, actionWithoutImage]);
     setNewAction({
       axe: '',
       description: '',
@@ -136,22 +145,40 @@ function DossierForm() {
     setIsModalOpen(false);
   };
 
-  // Fonction pour modifier une action existante
   const [editingActionIndex, setEditingActionIndex] = useState(null);
 
-  const handleEditAction = (index) => {
+  const handleEditAction = async (index) => {
     setEditingActionIndex(index);
-    setNewAction(actions[index]);
+    const action = actions[index];
+
+    const imageBase64 = await get(`image-${action.id}`);
+
+    setNewAction({
+      ...action,
+      justificatif: imageBase64 || null,
+      justificatifPreview: imageBase64 || '',
+    });
     setIsModalOpen(true);
   };
 
-  const handleUpdateAction = () => {
+  const handleUpdateAction = async () => {
     if (!newAction.axe || !newAction.description || !newAction.justificatif) {
       alert('Les champs "Description", "Axe" et "Justificatif" sont obligatoires.');
       return;
     }
+
     const updatedActions = [...actions];
-    updatedActions[editingActionIndex] = newAction;
+    const actionId = newAction.id;
+
+    await set(`image-${actionId}`, newAction.justificatif);
+
+    const actionWithoutImage = {
+      ...newAction,
+      justificatif: null,
+      justificatifPreview: newAction.justificatifPreview,
+    };
+
+    updatedActions[editingActionIndex] = actionWithoutImage;
     setActions(updatedActions);
     setNewAction({
       axe: '',
@@ -163,14 +190,16 @@ function DossierForm() {
     setEditingActionIndex(null);
   };
 
-  // Fonction pour supprimer une action
-  const handleDeleteAction = (index) => {
+  const handleDeleteAction = async (index) => {
+    const actionToDelete = actions[index];
+
+    await del(`image-${actionToDelete.id}`);
+
     const updatedActions = [...actions];
     updatedActions.splice(index, 1);
     setActions(updatedActions);
   };
 
-  // Calcul du nombre de points par action
   const calculateOpens = (axe, position) => {
     switch (axe) {
       case 'Entreprise':
@@ -188,12 +217,11 @@ function DossierForm() {
     }
   };
 
-  // Calculer les points totaux par axe
   useEffect(() => {
     const totals = {};
     const countsPerAxe = {};
 
-    actions.forEach(action => {
+    actions.forEach((action) => {
       if (!countsPerAxe[action.axe]) countsPerAxe[action.axe] = 0;
       countsPerAxe[action.axe] += 1;
 
@@ -222,11 +250,9 @@ function DossierForm() {
   const generatePDF = () => {
     const input = contentRef.current.cloneNode(true);
 
-    // Supprimer la colonne "Modifier" et "Supprimer" du tableau
     const modifyButtons = input.querySelectorAll('.modify-button');
     modifyButtons.forEach((btn) => btn.remove());
 
-    // Supprimer les en-têtes de la colonne "Actions"
     const modifyHeaders = input.querySelectorAll('.modify-header');
     modifyHeaders.forEach((header) => header.remove());
 
@@ -241,12 +267,23 @@ function DossierForm() {
     html2pdf().set(options).from(input).save();
   };
 
-  // Gestion du téléchargement du justificatif avec rognage
-  const onDropJustificatif = (acceptedFiles) => {
+  const onDropJustificatif = (acceptedFiles, fileRejections) => {
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
       setImageToCrop(URL.createObjectURL(file));
       setCropModalOpen(true);
+    }
+
+    if (fileRejections.length > 0) {
+      fileRejections.forEach(({ file, errors }) => {
+        errors.forEach((e) => {
+          if (e.code === 'file-too-large') {
+            alert(`Le fichier ${file.name} dépasse la taille maximale de 2 Mo.`);
+          } else if (e.code === 'file-invalid-type') {
+            alert(`Le fichier ${file.name} n'est pas un type d'image valide.`);
+          }
+        });
+      });
     }
   };
 
@@ -256,11 +293,13 @@ function DossierForm() {
 
   const handleCropSave = async () => {
     try {
-      const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
+      const croppedImageBlob = await getCroppedImg(imageToCrop, croppedAreaPixels);
+      const croppedImageBase64 = await blobToBase64(croppedImageBlob);
+
       setNewAction({
         ...newAction,
-        justificatif: croppedImage,
-        justificatifPreview: croppedImage,
+        justificatif: croppedImageBase64,
+        justificatifPreview: croppedImageBase64,
       });
       setCropModalOpen(false);
       setImageToCrop(null);
@@ -271,10 +310,11 @@ function DossierForm() {
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop: onDropJustificatif,
-    accept: 'image/*',
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg'],
+    },
+    maxSize: 2 * 1024 * 1024, // 2MB en octets
   });
-
-  // Contenu des accordéons
   const accordionsData = [
     {
       title: 'Axe Entreprise',
@@ -372,6 +412,7 @@ function DossierForm() {
             ecole={ecole}
             setEcole={setEcole}
             logoEcole={logoEcole}
+            setActions={setActions}
           />
           {/* Section Droite - 2/3 */}
           <div className="w-full xl:w-2/3 mt-6 xl:mt-0 border-2 border-gray-400 bg-white p-8 rounded-lg shadow-inner relative">
